@@ -1,0 +1,38 @@
+{
+  "name": "@paywalls-net/access",
+  "version": "0.1.0",
+  "description": "Developer SDK and CLI for paywalls.net Web Content Marketplace — wallet-backed content access for AI agents.",
+  "author": "paywalls.net",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "paywalls": "bin/paywalls.js"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./register": "./dist/cli/register.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paywalls-net/access.git"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^20.17.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.0",
+    "@types/jest": "^29.5.0"
+  }
+}

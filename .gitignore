@@ -1,0 +1,27 @@
+# build output
+dist/
+
+# dependencies
+node_modules/
+package-lock.json
+
+# logs
+*.log
+npm-debug.log*
+
+# coverage
+coverage/
+.nyc_output/
+
+# environment
+.env
+.env.local
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
