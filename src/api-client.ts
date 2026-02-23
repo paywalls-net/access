@@ -60,7 +60,14 @@ export class ApiClient {
       body: body ? JSON.stringify(body) : undefined,
     });
 
-    const data = (await response.json()) as T;
+    let data: T;
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      data = (await response.json()) as T;
+    } else {
+      const text = await response.text();
+      data = { error: text || response.statusText } as T;
+    }
 
     return {
       ok: response.ok,
