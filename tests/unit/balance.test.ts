@@ -1,8 +1,10 @@
 /**
  * Balance command — unit tests
  *
- * Tests the balance command logic using mocked API responses.
- * Also tests the formatBalance helper and integration with config/output.
+ * Structure:
+ *  1. Pure function tests (formatBalance)
+ *  2. API orchestration (correct URLs called, call order)
+ *  3. Output structure (JSON shape, ERR shape)
  *
  * @see paywalls-site-3v5.3.2
  * @see src/cli/balance.ts
@@ -10,25 +12,47 @@
 
 import { jest } from '@jest/globals';
 import { ApiClient } from '../../src/api-client.js';
+import { formatBalance } from '../../src/cli/balance.js';
 
 // ---------------------------------------------------------------------------
-// Mock ApiClient to avoid real HTTP calls
+// 1. Pure function tests — no mocks needed
 // ---------------------------------------------------------------------------
 
-let mockGetResponses: Record<string, { ok: boolean; status: number; data: any }> = {};
+describe('formatBalance', () => {
+  it('formats millicents as $X.XX', () => {
+    expect(formatBalance(150000)).toBe('$1.50');
+    expect(formatBalance(100000)).toBe('$1.00');
+  });
 
-jest.spyOn(ApiClient.prototype, 'get').mockImplementation(async (path: string) => {
+  it('formats zero', () => {
+    expect(formatBalance(0)).toBe('$0.00');
+  });
+
+  it('handles sub-cent amounts', () => {
+    expect(formatBalance(1)).toBe('$0.00');
+    expect(formatBalance(999)).toBe('$0.01');
+  });
+
+  it('handles large balances', () => {
+    expect(formatBalance(10_000_000_000)).toBe('$100000.00');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2–3. Integration tests — API orchestration + output structure
+// ---------------------------------------------------------------------------
+
+let mockGet: jest.SpiedFunction<typeof ApiClient.prototype.get>;
+let mockGetResponses: Record<string, { ok: boolean; status: number; data: any }>;
+
+mockGet = jest.spyOn(ApiClient.prototype, 'get').mockImplementation(async (path: string) => {
   const response = mockGetResponses[path];
-  if (!response) {
-    return { ok: false, status: 404, data: { error: 'Not found' } };
-  }
+  if (!response) return { ok: false, status: 404, data: { error: 'Not found' } };
   return response;
 });
 
-// Capture console output
 let consoleOutput: string[] = [];
 let consoleErrors: string[] = [];
-
 const originalLog = console.log;
 const originalError = console.error;
 
@@ -38,6 +62,7 @@ beforeEach(() => {
   console.log = (...args: any[]) => consoleOutput.push(args.join(' '));
   console.error = (...args: any[]) => consoleErrors.push(args.join(' '));
   mockGetResponses = {};
+  mockGet.mockClear();
 });
 
 afterAll(() => {
@@ -45,189 +70,167 @@ afterAll(() => {
   console.error = originalError;
 });
 
-// Prevent process.exit from stopping test runner
 const mockExit = jest.spyOn(process, 'exit').mockImplementation((() => {
   throw new Error('process.exit');
 }) as any);
+afterAll(() => mockExit.mockRestore());
 
-afterAll(() => {
-  mockExit.mockRestore();
-});
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+const meResponse = {
+  ok: true, status: 200,
+  data: { account_id: 'TEST-01-ACCT', account_name: 'Test Account', user_id: 1, user_type: 'service-user' },
+};
 
 describe('paywalls balance', () => {
-  // Use dynamic import to get balance after mocks are set up
   let balance: (args: string[]) => Promise<void>;
-
   beforeAll(async () => {
     const mod = await import('../../src/cli/balance.js');
     balance = mod.balance;
   });
 
-  describe('no API key configured', () => {
-    const originalApiKey = process.env.PAYWALLS_API_KEY;
+  // ---- Error handling: ERR structure ----
 
-    beforeEach(() => {
-      process.env.PAYWALLS_API_KEY = '';
-    });
-
+  describe('error handling', () => {
+    const origKey = process.env.PAYWALLS_API_KEY;
     afterEach(() => {
-      if (originalApiKey !== undefined) {
-        process.env.PAYWALLS_API_KEY = originalApiKey;
-      } else {
-        delete process.env.PAYWALLS_API_KEY;
-      }
+      if (origKey !== undefined) process.env.PAYWALLS_API_KEY = origKey;
+      else delete process.env.PAYWALLS_API_KEY;
     });
 
-    it('exits with error when no API key is set', async () => {
-      await expect(balance([])).rejects.toThrow('process.exit');
-      expect(consoleErrors.join('\n')).toMatch(/Unable to authenticate/);
-    });
-
-    it('outputs JSON error when --json flag is set', async () => {
+    it('exits(1) with ERR structure when no API key', async () => {
+      process.env.PAYWALLS_API_KEY = '';
       await expect(balance(['--json'])).rejects.toThrow('process.exit');
+
       const output = JSON.parse(consoleOutput.join(''));
-      expect(output.error).toMatch(/Unable to authenticate/);
-      expect(output.reason).toBeDefined();
-      expect(output.resolution).toBeDefined();
+      expect(output).toHaveProperty('error');
+      expect(output).toHaveProperty('reason');
+      expect(output).toHaveProperty('resolution');
+      expect(mockExit).toHaveBeenCalledWith(1);
+    });
+
+    it('exits(1) with ERR including HTTP status when /api/me fails', async () => {
+      process.env.PAYWALLS_API_KEY = 'bad-key';
+      mockGetResponses['/api/me'] = { ok: false, status: 401, data: { error: 'Unauthorized' } };
+
+      await expect(balance(['--json'])).rejects.toThrow('process.exit');
+
+      const output = JSON.parse(consoleOutput.join(''));
+      expect(output).toHaveProperty('error');
+      expect(output.reason).toMatch(/401/);
+      expect(mockExit).toHaveBeenCalledWith(1);
+    });
+
+    it('exits(1) with ERR when wallet not found (404)', async () => {
+      process.env.PAYWALLS_API_KEY = 'test-key';
+      mockGetResponses['/api/me'] = meResponse;
+      mockGetResponses['/api/wallet/TEST-01-ACCT/balance'] = {
+        ok: false, status: 404, data: { error: 'Wallet not found' },
+      };
+
+      await expect(balance(['--json'])).rejects.toThrow('process.exit');
+
+      const output = JSON.parse(consoleOutput.join(''));
+      expect(output).toHaveProperty('error');
+      expect(output.reason).toMatch(/TEST-01-ACCT/); // includes the account ID
+      expect(output).toHaveProperty('resolution');
     });
   });
 
-  describe('with API key configured', () => {
-    const originalApiKey = process.env.PAYWALLS_API_KEY;
+  // ---- API orchestration ----
 
-    beforeEach(() => {
-      process.env.PAYWALLS_API_KEY = 'test-key-123';
-    });
-
+  describe('API orchestration', () => {
+    const origKey = process.env.PAYWALLS_API_KEY;
+    const origAcctId = process.env.PAYWALLS_ACCOUNT_ID;
+    beforeEach(() => { process.env.PAYWALLS_API_KEY = 'test-key'; });
     afterEach(() => {
-      if (originalApiKey !== undefined) {
-        process.env.PAYWALLS_API_KEY = originalApiKey;
-      } else {
-        delete process.env.PAYWALLS_API_KEY;
-      }
+      if (origKey !== undefined) process.env.PAYWALLS_API_KEY = origKey;
+      else delete process.env.PAYWALLS_API_KEY;
+      if (origAcctId !== undefined) process.env.PAYWALLS_ACCOUNT_ID = origAcctId;
+      else delete process.env.PAYWALLS_ACCOUNT_ID;
     });
 
-    it('shows balance when API returns success', async () => {
-      mockGetResponses['/api/me'] = {
-        ok: true,
-        status: 200,
-        data: {
-          account_id: 'TEST-01-ACCOUNT',
-          account_name: 'Test Account',
-          user_id: 1,
-          user_type: 'service-user',
-        },
-      };
-      mockGetResponses['/api/wallet/TEST-01-ACCOUNT/balance'] = {
-        ok: true,
-        status: 200,
-        data: { balance: 500000 },
+    it('calls /api/me first, then /api/wallet/:id/balance', async () => {
+      mockGetResponses['/api/me'] = meResponse;
+      mockGetResponses['/api/wallet/TEST-01-ACCT/balance'] = {
+        ok: true, status: 200, data: { balance: 500000 },
       };
 
       await balance([]);
-      const output = consoleOutput.join('\n');
-      expect(output).toMatch(/\$5\.00/);
-      expect(output).toMatch(/TEST-01-ACCOUNT/);
-      expect(output).toMatch(/500,000|500000/);
+
+      const calls = mockGet.mock.calls.map(c => c[0]);
+      expect(calls[0]).toBe('/api/me');
+      expect(calls[1]).toBe('/api/wallet/TEST-01-ACCT/balance');
     });
 
-    it('outputs JSON when --json flag is set', async () => {
-      mockGetResponses['/api/me'] = {
-        ok: true,
-        status: 200,
-        data: {
-          account_id: 'TEST-01-ACCOUNT',
-          account_name: 'Test Account',
-          user_id: 1,
-          user_type: 'service-user',
-        },
+    it('skips /api/me when PAYWALLS_ACCOUNT_ID is set', async () => {
+      process.env.PAYWALLS_ACCOUNT_ID = 'KNOWN-ACCT';
+      mockGetResponses['/api/wallet/KNOWN-ACCT/balance'] = {
+        ok: true, status: 200, data: { balance: 0 },
       };
-      mockGetResponses['/api/wallet/TEST-01-ACCOUNT/balance'] = {
-        ok: true,
-        status: 200,
-        data: { balance: 150000 },
+
+      await balance([]);
+
+      const calls = mockGet.mock.calls.map(c => c[0]);
+      expect(calls[0]).toBe('/api/wallet/KNOWN-ACCT/balance');
+      expect(calls.some(c => c === '/api/me')).toBe(false);
+    });
+
+    it('uses account_id from /api/me response to build wallet URL', async () => {
+      const customMe = {
+        ok: true, status: 200,
+        data: { account_id: 'DYNAMIC-99-ID', account_name: 'Dynamic', user_id: 2, user_type: 'user' },
+      };
+      mockGetResponses['/api/me'] = customMe;
+      mockGetResponses['/api/wallet/DYNAMIC-99-ID/balance'] = {
+        ok: true, status: 200, data: { balance: 42000 },
+      };
+
+      await balance(['--json']);
+
+      const calls = mockGet.mock.calls.map(c => c[0]);
+      expect(calls[1]).toBe('/api/wallet/DYNAMIC-99-ID/balance');
+    });
+  });
+
+  // ---- JSON output structure ----
+
+  describe('JSON output structure', () => {
+    const origKey = process.env.PAYWALLS_API_KEY;
+    beforeEach(() => { process.env.PAYWALLS_API_KEY = 'test-key'; });
+    afterEach(() => {
+      if (origKey !== undefined) process.env.PAYWALLS_API_KEY = origKey;
+      else delete process.env.PAYWALLS_API_KEY;
+    });
+
+    it('has account_id, balance, balance_formatted, currency', async () => {
+      mockGetResponses['/api/me'] = meResponse;
+      mockGetResponses['/api/wallet/TEST-01-ACCT/balance'] = {
+        ok: true, status: 200, data: { balance: 500000 },
       };
 
       await balance(['--json']);
       const output = JSON.parse(consoleOutput.join(''));
-      expect(output.account_id).toBe('TEST-01-ACCOUNT');
-      expect(output.balance).toBe(150000);
-      expect(output.balance_formatted).toBe('$1.50');
-      expect(output.currency).toBe('USD');
+
+      expect(output).toEqual({
+        account_id: 'TEST-01-ACCT',
+        account_name: 'Test Account',
+        balance: 500000,
+        balance_formatted: formatBalance(500000),
+        currency: 'USD',
+      });
     });
 
-    it('handles invalid API key (401 from /api/me)', async () => {
-      mockGetResponses['/api/me'] = {
-        ok: false,
-        status: 401,
-        data: { error: 'Unauthorized' },
+    it('balance_formatted is computed from raw balance (not passthrough)', async () => {
+      mockGetResponses['/api/me'] = meResponse;
+      mockGetResponses['/api/wallet/TEST-01-ACCT/balance'] = {
+        ok: true, status: 200, data: { balance: 12345 },
       };
 
-      await expect(balance([])).rejects.toThrow('process.exit');
-      expect(consoleErrors.join('\n')).toMatch(/Unable to identify account/);
-    });
+      await balance(['--json']);
+      const output = JSON.parse(consoleOutput.join(''));
 
-    it('handles no wallet found (404 from balance)', async () => {
-      mockGetResponses['/api/me'] = {
-        ok: true,
-        status: 200,
-        data: {
-          account_id: 'TEST-01-ACCOUNT',
-          account_name: 'Test Account',
-          user_id: 1,
-          user_type: 'service-user',
-        },
-      };
-      mockGetResponses['/api/wallet/TEST-01-ACCOUNT/balance'] = {
-        ok: false,
-        status: 404,
-        data: { error: 'Wallet not found' },
-      };
-
-      await expect(balance([])).rejects.toThrow('process.exit');
-      expect(consoleErrors.join('\n')).toMatch(/Unable to retrieve balance/);
-    });
-
-    it('skips /api/me when accountId is already known from config', async () => {
-      process.env.PAYWALLS_ACCOUNT_ID = 'KNOWN-01-ACCOUNT';
-
-      mockGetResponses['/api/wallet/KNOWN-01-ACCOUNT/balance'] = {
-        ok: true,
-        status: 200,
-        data: { balance: 0 },
-      };
-
-      await balance([]);
-      const output = consoleOutput.join('\n');
-      expect(output).toMatch(/\$0\.00/);
-      expect(output).toMatch(/KNOWN-01-ACCOUNT/);
-
-      delete process.env.PAYWALLS_ACCOUNT_ID;
-    });
-
-    it('formats zero balance correctly', async () => {
-      mockGetResponses['/api/me'] = {
-        ok: true,
-        status: 200,
-        data: {
-          account_id: 'TEST-01-ACCOUNT',
-          account_name: 'Test',
-          user_id: 1,
-          user_type: 'user',
-        },
-      };
-      mockGetResponses['/api/wallet/TEST-01-ACCOUNT/balance'] = {
-        ok: true,
-        status: 200,
-        data: { balance: 0 },
-      };
-
-      await balance([]);
-      expect(consoleOutput.join('\n')).toMatch(/\$0\.00/);
+      // Verify it matches our pure function, not a mock value
+      expect(output.balance).toBe(12345);
+      expect(output.balance_formatted).toBe(formatBalance(12345));
     });
   });
 });

@@ -30,7 +30,7 @@ interface BalanceResponse {
  * Format millicents as dollars string.
  * e.g. 150000 → "$1.50"
  */
-function formatBalance(millicents: number): string {
+export function formatBalance(millicents: number): string {
   const dollars = millicents / 100_000;
   return `$${dollars.toFixed(2)}`;
 }

@@ -46,7 +46,7 @@ interface ReceiptsListResponse {
  * Format millicents as dollars string with sign.
  * e.g. -1000 → "-$0.01", 500000 → "+$5.00"
  */
-function formatAmount(millicents: number): string {
+export function formatAmount(millicents: number): string {
   const abs = Math.abs(millicents);
   const dollars = abs / 100_000;
   const sign = millicents < 0 ? '-' : '+';
@@ -56,7 +56,7 @@ function formatAmount(millicents: number): string {
 /**
  * Format ISO date to local short format for display.
  */
-function formatDate(iso: string | undefined): string {
+export function formatDate(iso: string | undefined): string {
   if (!iso) return '—';
   try {
     const d = new Date(iso);
@@ -75,7 +75,7 @@ function formatDate(iso: string | undefined): string {
 /**
  * Get the receipt ID from a receipt object (supports both publicId and id fields).
  */
-function receiptId(r: Receipt): string {
+export function receiptId(r: { publicId?: string; id?: string | number }): string {
   return r.publicId || r.id?.toString() || '—';
 }
 
@@ -303,7 +303,7 @@ async function listReceipts(
 /**
  * Pad columns for table output.
  */
-function padRow(
+export function padRow(
   date: string,
   type: string,
   amount: string,
