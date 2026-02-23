@@ -23,9 +23,38 @@ export function isHeadless(): boolean {
 
 /**
  * Open a URL in the default browser. No-op in headless environments.
+ *
+ * @param url - The URL to open
+ * @param opts.incognito - Open in a private/incognito window (Chrome, Firefox, Edge)
  */
-export function openBrowser(url: string): void {
+export function openBrowser(url: string, opts: { incognito?: boolean } = {}): void {
   if (isHeadless()) return;
+
+  const quotedUrl = JSON.stringify(url);
+
+  if (opts.incognito && platform() === 'darwin') {
+    // Try Chrome first (most common dev browser), fall back to Firefox, then default
+    exec(
+      `open -na "Google Chrome" --args --incognito ${quotedUrl} 2>/dev/null || ` +
+      `open -a Firefox --args -private-window ${quotedUrl} 2>/dev/null || ` +
+      `open ${quotedUrl}`,
+    );
+    return;
+  }
+
+  if (opts.incognito && platform() === 'linux') {
+    exec(
+      `google-chrome --incognito ${quotedUrl} 2>/dev/null || ` +
+      `firefox -private-window ${quotedUrl} 2>/dev/null || ` +
+      `xdg-open ${quotedUrl}`,
+    );
+    return;
+  }
+
+  if (opts.incognito && platform() === 'win32') {
+    exec(`start chrome --incognito ${quotedUrl}`);
+    return;
+  }
 
   const cmd =
     platform() === 'darwin'
@@ -34,7 +63,7 @@ export function openBrowser(url: string): void {
         ? 'start'
         : 'xdg-open';
 
-  exec(`${cmd} ${JSON.stringify(url)}`);
+  exec(`${cmd} ${quotedUrl}`);
 }
 
 /**

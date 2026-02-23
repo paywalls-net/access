@@ -72,6 +72,7 @@ export async function register(args: string[]): Promise<void> {
   const jsonMode = flags.json === true;
   const headless = flags.headless === true || isHeadless();
   const force = flags.force === true;
+  const incognito = flags.incognito === true;
 
   // ---- Guard: already registered ----
   if (!force && hasCredentials()) {
@@ -157,7 +158,7 @@ export async function register(args: string[]): Promise<void> {
 
   // ---- Step 3: Open browser (unless headless) ----
   if (!headless) {
-    openBrowser(verification_uri_complete);
+    openBrowser(verification_uri_complete, { incognito });
   }
 
   // ---- Step 4: Poll for token ----
