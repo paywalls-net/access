@@ -1,19 +1,40 @@
 # @paywalls-net/access
-
 Developer SDK and CLI for the [paywalls.net](https://paywalls.net) Web Content Marketplace — wallet-backed content access for AI agents.
+
+Fetch articles, pages, and other publisher content that is cleaned, optimized for LLM consumption, and fully licensed. No scraping, no legal gray areas — every response is a legitimate content transaction between your wallet and the publisher.
+
+> **New here?** Follow the [Quickstart Guide](https://paywalls.net/docs/quickstart) to go from zero to your first licensed fetch in under 5 minutes.
 
 ## Quick Start
 
 ```bash
-# Register a device and get an API key
-npx @paywalls-net/access register
+# 1. Install
+npm install -g @paywalls-net/access
 
-# Check your wallet balance
-npx @paywalls-net/access balance
+# 2. Register your device (opens browser for approval)
+paywalls register
 
-# Diagnose configuration issues
-npx @paywalls-net/access doctor
+# 3. Verify everything works
+paywalls doctor
+
+# 4. Fund your wallet
+paywalls topup
+
+# 5. Check your balance
+paywalls balance
 ```
+
+Then use the SDK in your code:
+
+```typescript
+import { ApiClient } from '@paywalls-net/access';
+
+const client = new ApiClient();  // auto-loads credentials
+const page = await client.get('/access/https://example.com/article');
+console.log(page.data);         // licensed content
+```
+
+See the full [Getting Started guide](getting-started.md) for detailed output examples and troubleshooting.
 
 ## Installation
 
@@ -56,14 +77,31 @@ The credentials file is created automatically by `paywalls register`:
 }
 ```
 
-## SDK Usage (Coming Soon)
+## SDK Usage
 
 ```typescript
 import { ApiClient } from '@paywalls-net/access';
 
-const client = new ApiClient({ apiKey: process.env.PAYWALLS_API_KEY });
-const { data } = await client.get('/api/wallet/balance');
-console.log(data);
+const client = new ApiClient();  // auto-loads credentials from file, env, or .env
+
+// Check balance
+const balance = await client.get('/api/wallet/balance');
+console.log(balance.data);  // { balance: 500000, currency: 'USD' }
+
+// Fetch licensed content
+const page = await client.get('/access/https://example.com/article');
+console.log(page.ok);    // true
+console.log(page.data);  // article content
+```
+
+### Configuration
+
+```typescript
+// Explicit config (overrides credential file)
+const client = new ApiClient({
+  apiKey: process.env.PAYWALLS_API_KEY,
+  baseUrl: 'https://api.paywalls.net',
+});
 ```
 
 ## Development
@@ -79,6 +117,12 @@ npm test                # run tests
 # Test against local core-api
 node bin/paywalls.js register --base-url http://localhost:3000
 ```
+
+## Documentation
+
+- [Quickstart Guide](https://paywalls.net/docs/quickstart) — zero to first licensed fetch in 5 minutes
+- [Getting Started](getting-started.md) — detailed CLI walkthrough with expected outputs
+- [API Reference](https://paywalls.net/docs/ai-companies/api-reference) — endpoint documentation
 
 ## License
 
