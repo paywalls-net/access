@@ -11,8 +11,23 @@
  */
 
 import { jest } from '@jest/globals';
-import { ApiClient } from '../../src/api-client.js';
-import { formatBalance } from '../../src/cli/balance.js';
+
+// ---------------------------------------------------------------------------
+// Mock config module to isolate from real credentials file
+// ---------------------------------------------------------------------------
+jest.unstable_mockModule('../../src/config.js', () => ({
+  loadConfig: jest.fn((overrides?: any) => ({
+    apiKey: overrides?.apiKey ?? process.env.PAYWALLS_API_KEY ?? '',
+    baseUrl: overrides?.baseUrl ?? process.env.PAYWALLS_BASE_URL ?? 'https://api.paywalls.net',
+    accountId: overrides?.accountId ?? process.env.PAYWALLS_ACCOUNT_ID,
+  })),
+  saveCredentials: jest.fn(),
+  hasCredentials: jest.fn(() => false),
+}));
+
+// Dynamic imports — must be after jest.unstable_mockModule
+const { ApiClient } = await import('../../src/api-client.js');
+const { formatBalance } = await import('../../src/cli/balance.js');
 
 // ---------------------------------------------------------------------------
 // 1. Pure function tests — no mocks needed
@@ -231,6 +246,42 @@ describe('paywalls balance', () => {
       // Verify it matches our pure function, not a mock value
       expect(output.balance).toBe(12345);
       expect(output.balance_formatted).toBe(formatBalance(12345));
+    });
+  });
+
+  // ---- Headless behavior ----
+
+  describe('headless mode', () => {
+    const origKey = process.env.PAYWALLS_API_KEY;
+    const origArgv = [...process.argv];
+    beforeEach(() => { process.env.PAYWALLS_API_KEY = 'test-key'; });
+    afterEach(() => {
+      if (origKey !== undefined) process.env.PAYWALLS_API_KEY = origKey;
+      else delete process.env.PAYWALLS_API_KEY;
+      process.argv = [...origArgv];
+    });
+
+    it('--headless output contains no ANSI escape codes', async () => {
+      process.argv.push('--headless');
+      mockGetResponses['/api/me'] = meResponse;
+      mockGetResponses['/api/wallet/TEST-01-ACCT/balance'] = {
+        ok: true, status: 200, data: { balance: 500000 },
+      };
+
+      await balance(['--headless']);
+      const allOutput = [...consoleOutput, ...consoleErrors].join('\n');
+      expect(allOutput).not.toMatch(/\x1b/);
+    });
+
+    it('--json output contains no ANSI escape codes', async () => {
+      mockGetResponses['/api/me'] = meResponse;
+      mockGetResponses['/api/wallet/TEST-01-ACCT/balance'] = {
+        ok: true, status: 200, data: { balance: 500000 },
+      };
+
+      await balance(['--json']);
+      const allOutput = [...consoleOutput, ...consoleErrors].join('\n');
+      expect(allOutput).not.toMatch(/\x1b/);
     });
   });
 });

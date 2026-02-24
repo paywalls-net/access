@@ -11,24 +11,44 @@ import { platform } from 'node:os';
 
 /**
  * Detect headless / CI environment (no interactive browser available).
+ *
+ * Headless mode activates when ANY of:
+ *  - `--headless` flag is passed
+ *  - `CI` environment variable is set (GitHub Actions, GitLab CI, Jenkins, etc.)
+ *  - `CODESPACES` or `SSH_CONNECTION` env var is set
+ *  - stdout is not a TTY (piped output)
+ *  - `--json` flag is passed (implies headless)
  */
 export function isHeadless(): boolean {
   return (
-    !process.stdout.isTTY ||
+    process.argv.includes('--headless') ||
+    process.argv.includes('--json') ||
     process.env.CI !== undefined ||
     process.env.CODESPACES !== undefined ||
-    process.env.SSH_CONNECTION !== undefined
+    process.env.SSH_CONNECTION !== undefined ||
+    !process.stdout.isTTY
   );
 }
 
 /**
- * Open a URL in the default browser. No-op in headless environments.
+ * Detect `--json` output mode. Implies headless behavior.
+ */
+export function isJsonMode(): boolean {
+  return process.argv.includes('--json');
+}
+
+/**
+ * Open a URL in the default browser.
+ * In headless environments, prints the URL to stdout instead of opening a browser.
  *
  * @param url - The URL to open
  * @param opts.incognito - Open in a private/incognito window (Chrome, Firefox, Edge)
  */
 export function openBrowser(url: string, opts: { incognito?: boolean } = {}): void {
-  if (isHeadless()) return;
+  if (isHeadless()) {
+    console.log(url);
+    return;
+  }
 
   const quotedUrl = JSON.stringify(url);
 

@@ -29,6 +29,8 @@ Commands:
 Options:
   --help      Show this help message
   --version   Show version
+  --headless  Disable color, browser auto-open, and interactive prompts
+  --json      Output machine-readable JSON (implies --headless)
 
 Get started:
   paywalls register

@@ -6,8 +6,24 @@
  *
  * Aliases: `paywalls fund`
  */
-export async function topup(_args: string[]): Promise<void> {
-  console.log('paywalls topup — not yet implemented');
-  console.log('');
-  console.log('This will allow you to add funds to your wallet.');
+
+import { parseFlags } from './util.js';
+import { info } from './output.js';
+
+export async function topup(args: string[]): Promise<void> {
+  const flags = parseFlags(args);
+  const jsonMode = flags.json === true;
+
+  if (jsonMode) {
+    console.log(JSON.stringify({
+      error: 'Not yet implemented.',
+      resolution: 'Visit https://paywalls.net to add funds.',
+    }));
+    return;
+  }
+
+  info('paywalls topup — not yet implemented');
+  info('');
+  info('This will allow you to add funds to your wallet.');
+  info('Visit https://paywalls.net to add funds in the meantime.');
 }

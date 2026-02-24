@@ -27,7 +27,7 @@ import { hostname } from 'node:os';
 import { ApiClient } from '../api-client.js';
 import { loadConfig, saveCredentials, hasCredentials } from '../config.js';
 import { parseFlags, isHeadless, openBrowser } from './util.js';
-import { success, error, info, dim } from './output.js';
+import { success, error, info, dim, progress } from './output.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -190,7 +190,7 @@ export async function register(args: string[]): Promise<void> {
         );
       } catch {
         // Network error during polling — keep trying
-        if (!jsonMode) process.stdout.write('!');
+        if (!jsonMode) progress('!');
         continue;
       }
 
@@ -230,7 +230,7 @@ export async function register(args: string[]): Promise<void> {
 
       // ---- 428: Authorization pending ----
       if (tokenRes.status === 428 && errData.error === 'authorization_pending') {
-        if (!jsonMode) process.stdout.write('.');
+        if (!jsonMode) progress('.');
         continue;
       }
 

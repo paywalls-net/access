@@ -11,13 +11,28 @@
  */
 
 import { jest } from '@jest/globals';
-import { ApiClient } from '../../src/api-client.js';
-import {
+
+// ---------------------------------------------------------------------------
+// Mock config module to isolate from real credentials file
+// ---------------------------------------------------------------------------
+jest.unstable_mockModule('../../src/config.js', () => ({
+  loadConfig: jest.fn((overrides?: any) => ({
+    apiKey: overrides?.apiKey ?? process.env.PAYWALLS_API_KEY ?? '',
+    baseUrl: overrides?.baseUrl ?? process.env.PAYWALLS_BASE_URL ?? 'https://api.paywalls.net',
+    accountId: overrides?.accountId ?? process.env.PAYWALLS_ACCOUNT_ID,
+  })),
+  saveCredentials: jest.fn(),
+  hasCredentials: jest.fn(() => false),
+}));
+
+// Dynamic imports — must be after jest.unstable_mockModule
+const { ApiClient } = await import('../../src/api-client.js');
+const {
   formatAmount,
   formatDate,
   receiptId,
   padRow,
-} from '../../src/cli/receipts.js';
+} = await import('../../src/cli/receipts.js');
 
 // ---------------------------------------------------------------------------
 // 1. Pure function tests — no mocks needed
@@ -314,6 +329,44 @@ describe('paywalls receipts', () => {
 
       expect(output.publicId).toBe('REC-001');
       expect(output.amount_formatted).toBe(formatAmount(sampleReceipts[0].amount));
+    });
+  });
+
+  // ---- Headless behavior ----
+
+  describe('headless mode', () => {
+    const origKey = process.env.PAYWALLS_API_KEY;
+    const origArgv = [...process.argv];
+    beforeEach(() => { process.env.PAYWALLS_API_KEY = 'test-key'; });
+    afterEach(() => {
+      if (origKey !== undefined) process.env.PAYWALLS_API_KEY = origKey;
+      else delete process.env.PAYWALLS_API_KEY;
+      process.argv = [...origArgv];
+    });
+
+    it('--headless list output contains no ANSI escape codes', async () => {
+      process.argv.push('--headless');
+      mockGetResponses['/api/me'] = meResponse;
+      mockGetResponses['/api/wallet/TEST-01-ACCT/receipts'] = {
+        ok: true, status: 200,
+        data: { receipts: sampleReceipts, limit: 10, offset: 0, total: 2 },
+      };
+
+      await receipts(['--headless']);
+      const allOutput = [...consoleOutput, ...consoleErrors].join('\n');
+      expect(allOutput).not.toMatch(/\x1b/);
+    });
+
+    it('--json output contains no ANSI escape codes', async () => {
+      mockGetResponses['/api/me'] = meResponse;
+      mockGetResponses['/api/wallet/TEST-01-ACCT/receipts'] = {
+        ok: true, status: 200,
+        data: { receipts: sampleReceipts, limit: 10, offset: 0, total: 2 },
+      };
+
+      await receipts(['--json']);
+      const allOutput = [...consoleOutput, ...consoleErrors].join('\n');
+      expect(allOutput).not.toMatch(/\x1b/);
     });
   });
 });

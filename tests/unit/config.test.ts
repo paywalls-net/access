@@ -1,4 +1,26 @@
-import { loadConfig } from '../../src/config.js';
+import { jest } from '@jest/globals';
+import { readFileSync as realReadFileSync } from 'node:fs';
+
+// Mock node:fs so loadCredentialsFile() doesn't read the real credentials file.
+// We intercept readFileSync: if the path ends with credentials.json, throw ENOENT
+// so loadConfig falls through to defaults. Everything else delegates to the real fs.
+jest.unstable_mockModule('node:fs', () => {
+  const actual = jest.requireActual('node:fs') as typeof import('node:fs');
+  return {
+    ...actual,
+    readFileSync: jest.fn((path: string, ...rest: any[]) => {
+      if (typeof path === 'string' && path.includes('credentials.json')) {
+        const err: any = new Error('ENOENT');
+        err.code = 'ENOENT';
+        throw err;
+      }
+      return (actual.readFileSync as any)(path, ...rest);
+    }),
+  };
+});
+
+// Dynamic import after mock setup
+const { loadConfig } = await import('../../src/config.js');
 
 describe('loadConfig', () => {
   const originalEnv = process.env;

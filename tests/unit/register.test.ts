@@ -277,8 +277,10 @@ describe('paywalls register', () => {
 
       await register([]);
 
-      // Should have written dots
-      expect(stdoutWrites.filter(w => w === '.').length).toBe(2);
+      // In non-TTY (test env), progress dots go to console.log; in TTY to stdout.write
+      const dotsInConsole = consoleOutput.filter(w => w === '.').length;
+      const dotsInStdout = stdoutWrites.filter(w => w === '.').length;
+      expect(dotsInConsole + dotsInStdout).toBe(2);
     });
 
     it('exits(1) on expired_token', async () => {
